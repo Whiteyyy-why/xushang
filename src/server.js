@@ -10,7 +10,7 @@ import { Service } from './service.js';
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
-const staticFiles = new Set(['index.html', 'styles.css', 'app.js', 'favicon.svg']);
+const staticFiles = new Set(['index.html', 'styles.css', 'app.js', 'favicon.svg', 'logo.svg', 'icons.svg']);
 const MAX_BODY = 32 * 1024 * 1024;
 async function readBody(req) {
   let size = 0;const chunks = [];

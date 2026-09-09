@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <title>续上</title>
+  <defs><linearGradient id="blue" x1="6" y1="2" x2="42" y2="48" gradientUnits="userSpaceOnUse"><stop stop-color="#4c8dff"/><stop offset="1" stop-color="#215beb"/></linearGradient></defs>
+  <rect width="48" height="48" rx="14" fill="url(#blue)"/>
+  <path d="M14 11V28C14 31.866 17.134 35 21 35H23M30 35H36M30 29L36 35L30 41" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

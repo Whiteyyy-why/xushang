@@ -16,7 +16,11 @@ function toast(message, error = false) {
 }
 function time(value) { return new Date(value).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}); }
 function fullTime(value) { return new Date(value).toLocaleString('zh-CN', {hour12:false}); }
-function button(label, action, kind = '', extra = '') { return '<button type="button" class="button ' + kind + '" data-action="' + action + '" ' + extra + '>' + label + '</button>'; }
+function icon(name) { return '<svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#' + name + '"></use></svg>'; }
+function button(label, action, kind = '', extra = '') {
+  const name = {add:'plus',capture:'bookmark',refresh:'refresh',open:'arrow','export-md':'download','export-json':'download',import:'upload'}[action];
+  return '<button type="button" class="button ' + kind + '" data-action="' + action + '" ' + extra + '>' + (name ? icon(name) : '') + '<span>' + label.replace(/^[＋↻]\s*|\s*[↗↓→]$/g,'') + '</span></button>';
+}
 function heading(title, description, actions = '', kicker = 'YOUR NEXT SMALL STEP') {
   return '<div class="page-head"><div><span class="eyebrow">' + kicker + '</span><h1>' + title + '</h1><p>' + description + '</p></div><div class="head-actions">' + actions + '</div></div>';
 }
@@ -25,7 +29,7 @@ function projectStrip() {
 }
 function empty() {
   return heading('把下一步，留在这里。', '接入第一个项目，就能开始留下工作现场。') +
-    '<section class="empty-panel"><div class="empty-symbol" aria-hidden="true">↳</div><h2>项目可以关掉，思路可以留下。</h2><p>代码、写作、研究资料。选择一个本地文件夹，记下卡点和下一步；再回来时，从这里接上。</p><div class="empty-actions">' +
+    '<section class="empty-panel"><div class="empty-symbol" aria-hidden="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#resume"></use></svg></div><h2>项目可以关掉，思路可以留下。</h2><p>代码、写作、研究资料。选择一个本地文件夹，记下卡点和下一步；再回来时，从这里接上。</p><div class="empty-actions">' +
     button('＋ 接入项目文件夹', 'add', 'primary') + button('先体验一个示例', 'example') +
     '</div><div class="empty-flow">① 接入文件夹 <span>→</span> ② 留下现场 <span>→</span> ③ 下次续上</div></section>';
 }
@@ -45,7 +49,7 @@ function comparisonPanel(d) {
     body += filesList(comparison.changes.slice(0, 12));
     if (comparison.changes.length > 12) body += '<details><summary>再看 ' + (comparison.changes.length - 12) + ' 个变化</summary>' + filesList(comparison.changes.slice(12)) + '</details>';
   } else if (comparison && !d.stale && !state.checkError) {
-    body += '<div class="change-empty"><span class="checkmark" aria-hidden="true">✓</span><p>' + (comparison.incomplete ? '已比较的文件没有变化' : '文件内容还和上次一样') + '</p><small>' + (current?.fileCount ?? 0) + ' 个文件已比较</small></div>';
+    body += '<div class="change-empty"><span class="checkmark" aria-hidden="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#check"></use></svg></span><p>' + (comparison.incomplete ? '已比较的文件没有变化' : '文件内容还和上次一样') + '</p><small>' + (current?.fileCount ?? 0) + ' 个文件已比较</small></div>';
   } else if (state.checking) {
     body += '<div class="change-empty"><p>正在后台检查变化…</p><small>你可以先看笔记，或继续工作。</small></div>';
   } else if (!d.sessions.length && current && !d.stale) {
@@ -56,7 +60,7 @@ function comparisonPanel(d) {
   const status = current?.git?.status || [];
   if (status.length) body += '<details><summary>' + status.length + ' 个 Git 工作区改动</summary>' + filesList(status.map(f => ({path:f.path, kind:'working'}))) + '</details>';
   if (current?.warnings?.length) body += '<div class="caption">' + current.warnings.map(e).join('<br>') + '</div>';
-  return '<section class="panel"><div class="section-title"><h3>离开之后</h3><span class="badge ' + (state.checking ? 'blue' : '') + '">' + (state.checking ? '后台检查中' : d.stale ? '保存的快照' : '已检查') + '</span></div><div class="branch">' + (current?.git ? '⑂ ' + e(current.git.branch) : '▱ 普通文件夹 · 文件指纹比较') + '</div>' + body + '<div class="caption">' + (current ? '记录时间 ' + e(time(current.scannedAt)) + ' · ' + current.fileCount + ' 个文件' : '检查会在后台执行，不影响查看现场。') + '</div></section>';
+  return '<section class="panel"><div class="section-title"><h3>离开之后</h3><span class="badge ' + (state.checking ? 'blue' : '') + '">' + (state.checking ? '后台检查中' : d.stale ? '保存的快照' : '已检查') + '</span></div><div class="branch">' + (current?.git ? icon('branch') + ' ' + e(current.git.branch) : icon('folder') + ' 普通文件夹 · 文件指纹比较') + '</div>' + body + '<div class="caption">' + (current ? '记录时间 ' + e(time(current.scannedAt)) + ' · ' + current.fileCount + ' 个文件' : '检查会在后台执行，不影响查看现场。') + '</div></section>';
 }
 function desk() {
   if (!state.projects.length) return empty();
@@ -147,7 +151,7 @@ $('#pick-folder').addEventListener('click',async()=>{
   catch(error){const el=$('#add-form .form-error');el.hidden=false;el.textContent=error.message;}
   finally{btn.disabled=false;btn.textContent='浏览…';}
 });
-function setFormBusy(form,busy,label){form.querySelectorAll('button').forEach(btn=>btn.disabled=busy);form.dataset.busy=String(busy);const submit=form.querySelector('[type=submit]');if(busy){submit.dataset.label=submit.textContent;submit.textContent=label;}else submit.textContent=submit.dataset.label||submit.textContent;}
+function setFormBusy(form,busy,label){form.querySelectorAll('button').forEach(btn=>btn.disabled=busy);form.dataset.busy=String(busy);const submit=form.querySelector('[type=submit]');if(busy){submit.dataset.label=submit.innerHTML;submit.textContent=label;}else submit.innerHTML=submit.dataset.label||submit.innerHTML;}
 document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('cancel',event=>{if(dialog.querySelector('form').dataset.busy==='true')event.preventDefault();}));
 $('#add-form').addEventListener('submit',async event=>{
   event.preventDefault();const form=event.currentTarget;setFormBusy(form,true,'正在接入…');form.querySelector('.form-error').hidden=true;
