@@ -1,0 +1,14 @@
+{
+  "name": "xushang",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "续上 — 留下工作现场，接着往前",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js --open",
+    "dev": "node --watch src/server.js",
+    "test": "node --test --test-concurrency=1",
+    "check": "node scripts/check.js"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+.xushang-data/
+coverage/
+*.log
+.DS_Store
+test-results/

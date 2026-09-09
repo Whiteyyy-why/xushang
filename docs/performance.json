@@ -1,0 +1,13 @@
+{
+  "fixture": {
+    "files": 1000,
+    "history": 100,
+    "kind": "local Git repository without a remote"
+  },
+  "initialSaveIncludingScanMs": 3366,
+  "serverRestartMs": 134,
+  "openingApiMedianMs": 30,
+  "openingApiP95Ms": 32,
+  "detailResponseKB": 89,
+  "note": "Local synthetic fixture; measurements are not a guarantee for every device or repository."
+}
