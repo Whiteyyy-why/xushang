@@ -6,6 +6,7 @@ import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Store } from './store.js';
 import { Service } from './service.js';
+import { openEditor } from './editor.js';
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,16 +25,6 @@ function spawnDetached(command, args) {
     const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true });
     child.once('error', reject);child.once('spawn', () => { child.unref();resolve(); });
   });
-}
-async function openEditor(target) {
-  if (process.platform === 'win32') {
-    const app = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Microsoft VS Code', 'Code.exe');
-    const systemApp = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe');
-    for (const exe of [app, systemApp]) { try { await spawnDetached(exe, target.isFile ? ['--goto', `${target.path}:${target.line}`] : [target.path]);return; } catch {} }
-    throw new Error('未找到 VS Code。请安装后重试，或使用“复制位置”手动打开。');
-  }
-  try { await exec('code', target.isFile ? ['--goto', `${target.path}:${target.line}`] : [target.path], { timeout: 8000 }); }
-  catch { throw new Error('未找到 code 命令。请安装 VS Code 的命令行入口，或复制文件位置。'); }
 }
 async function pickDirectory() {
   if (process.platform !== 'win32') throw new Error('当前系统请直接粘贴文件夹完整路径。');
@@ -79,7 +70,7 @@ export async function createApp({ dataDirectory = process.env.XUSHANG_DATA_DIR |
         if (match?.[2] === 'cancel') return json(res, 200, service.cancel(match[1]));
         if (match?.[2] === 'scope') return json(res, 200, await service.setScope(match[1], body));
         if (match?.[2] === 'refresh') return json(res, 200, await service.refresh(match[1], body));
-        if (match?.[2] === 'open') { const target = await service.fileTarget(match[1], body); await openExternal(target);return json(res, 200, { opened: true, path: target.path }); }
+        if (match?.[2] === 'open') { const target = await service.fileTarget(match[1], body); const editor = await openExternal(target);return json(res, 200, { opened: true, path: target.path, editor }); }
         return json(res, 404, { error: '没有这个接口。' });
       }
       if (req.method !== 'GET') return json(res, 405, { error: '不支持此操作。' });

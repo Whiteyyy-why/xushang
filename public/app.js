@@ -194,7 +194,7 @@ document.addEventListener('click',async event=>{
     if(action==='keep-draft'||action==='remote-draft'){
       await work.resolve(action==='keep-draft');if($('#session-dialog').open)fillCapture(work.fields());
     }
-    if(action==='focus-open'){const f=work.fields();await api('/projects/'+encodeURIComponent(state.selected)+'/open',{file:f.file,line:f.line});toast('已发送到 VS Code。');}
+    if(action==='focus-open'){const f=work.fields();const result=await api('/projects/'+encodeURIComponent(state.selected)+'/open',{file:f.file,line:f.line});toast('已发送到 '+(result.editor||'编辑器')+'。');}
     if(action==='focus-copy'){const f=work.fields();await navigator.clipboard.writeText(state.detail.project.path+(f.file?'/'+f.file+':'+f.line:''));toast('已复制工作位置。');}
     if(action==='shortcuts')$('#shortcuts-dialog').showModal();
     if(action==='scope')showScope();
@@ -206,7 +206,7 @@ document.addEventListener('click',async event=>{
     if(action==='cancel'){await api('/projects/'+encodeURIComponent(state.selected)+'/cancel',{});toast('正在停止检查，已保存的笔记不受影响。');}
     if(action==='refresh')await backgroundCheck(true);
     if(action==='example'){btn.disabled=true;const p=await api('/example',{});await loadProjects();await selectProject(p.id);toast('已创建可修改的本地示例项目。');}
-    if(action==='open'){const s=chosenSession(btn.dataset.session);btn.disabled=true;await api('/projects/'+encodeURIComponent(state.selected)+'/open',{file:s?.file||'',line:s?.line||1});toast('已发送到 VS Code。');}
+    if(action==='open'){const s=chosenSession(btn.dataset.session);btn.disabled=true;const result=await api('/projects/'+encodeURIComponent(state.selected)+'/open',{file:s?.file||'',line:s?.line||1});toast('已发送到 '+(result.editor||'编辑器')+'。');}
     if(action==='copy'){const s=chosenSession(btn.dataset.session);const position=state.detail.project.path+(s?.file?'/'+s.file+':'+s.line:'');await navigator.clipboard.writeText(position);toast('已复制：'+position);}
     if(action==='export-md')await download('md');
     if(action==='export-json')await download('json');
