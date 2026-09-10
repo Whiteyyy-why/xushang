@@ -74,15 +74,15 @@ test('保存现场、重启恢复与 JSON/Markdown 往返',async t=>{
   const f=await setup(t);await writeFile(path.join(f.project.path,'hello.txt'),'hello');
   await f.service.saveSession(f.project.id,{...note,file:'hello.txt',line:2});
   await f.service.waitForIdle();
-  const exported=f.service.exportJson();assert.equal(exported.sessions.length,1);
-  assert(f.service.exportMarkdown().includes('先读取 token'));
+  const exported=await f.service.exportJson();assert.equal(exported.sessions.length,1);
+  assert((await f.service.exportMarkdown()).includes('先读取 token'));
   await f.store.close();const reopened=await new Store(f.store.directory).init();t.after(()=>reopened.close());
   const service=new Service(reopened);const detail=await service.detail(f.project.id);
   assert.equal(detail.sessions[0].next,note.next);assert.equal(detail.stale,true);assert.equal(detail.sessions[0].file,'hello.txt');
   const other=await new Store(path.join(f.dir,'other-data')).init();t.after(()=>other.close());const restored=new Service(other);
   assert.deepEqual(await restored.importJson(exported),{projects:1,sessions:1});
   assert.deepEqual(await restored.importJson(exported),{projects:0,sessions:0});
-  assert.equal(restored.exportJson().sessions[0].next,note.next);
+  assert.equal((await restored.exportJson()).sessions[0].next,note.next);
 });
 
 test('无效备份与并发保存不会丢失或覆盖现有记录',async t=>{
@@ -90,7 +90,7 @@ test('无效备份与并发保存不会丢失或覆盖现有记录',async t=>{
   await Promise.all(Array.from({length:5},(_,i)=>f.service.saveSession(f.project.id,{...note,title:'现场 '+i})));
   await f.service.waitForIdle();
   assert.equal(f.store.read().sessions.length,5);
-  const invalid=f.service.exportJson();invalid.sessions[0].file='../escape';
+  const invalid=await f.service.exportJson();invalid.sessions[0].file='../escape';
   await assert.rejects(f.service.importJson(invalid),/越出/);assert.equal(f.store.read().sessions.length,5);
   await assert.rejects(f.service.importJson({version:2}),/版本/);
 });
@@ -153,6 +153,5 @@ test('示例项目是真实本地文件，快照和后台检查一致',async t=>
   const {dir}=await fixture(t);const store=await new Store(path.join(dir,'data')).init();t.after(()=>store.close());
   const service=new Service(store);const p=await service.createExample();
   const d=await service.refresh(p.id);assert.equal(d.current.fileCount,2);assert.equal(d.comparison.changes.length,0);
-  assert.equal((await service.createExample()).id,p.id);assert.equal(service.exportJson().projects.length,1);
+  assert.equal((await service.createExample()).id,p.id);assert.equal((await service.exportJson()).projects.length,1);
 });
-

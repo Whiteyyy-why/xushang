@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { canonicalDirectory, scanDirectory, compareSnapshots, resolveProjectFile, within, emptySnapshot, normalizeScope } from './scanner.js';
 import { validateDatabase } from './store.js';
+import { DraftStore } from './drafts.js';
 
 function field(value, name, max, required = false) {
   if (value === undefined && !required) return '';
@@ -16,7 +17,7 @@ function summarizeSession(s) {
 }
 export class Service {
   constructor(store, { scanner = scanDirectory } = {}) {
-    this.scanner = scanner; this.store = store; this.scans = new Map(); this.cache = new Map();
+    this.scanner = scanner; this.store = store; this.drafts = new DraftStore(store.directory); this.scans = new Map(); this.cache = new Map();
     this.queue = Promise.resolve(); this.tasks = new Set(); this.closing = false;
   }
   project(id) { const p = this.store.query(data => data.projects.find(p => p.id === id)); if (!p) throw new Error('项目不存在。'); return p; }
@@ -56,7 +57,7 @@ export class Service {
   }
   cancel(id) { const job = this.scans.get(id);job?.controller.abort(new Error('检查已取消，已保存的笔记不受影响。'));return {cancelled:Boolean(job)}; }
   async waitForIdle() { await Promise.allSettled([...this.tasks]); }
-  async close() { this.closing = true;for(const id of this.scans.keys())this.cancel(id);await this.waitForIdle(); }
+  async close() { this.closing = true;for(const id of this.scans.keys())this.cancel(id);await this.waitForIdle();await this.drafts.close(); }
   async setScope(id, input) {
     const mode = input.scanMode || 'workset', scope = normalizeScope(input.scope || []);
     if (!['workset','full'].includes(mode)) throw new Error('检查模式无效。');
@@ -104,16 +105,44 @@ export class Service {
     });
   }
   async refresh(id, input = {}) { await this.scan(this.project(id), { force: input.force === true });return this.detail(id); }
-  async saveSession(id, input) {
+  getDraft(id) { this.project(id);return this.drafts.get(id); }
+  putDraft(id,input) { this.project(id);return this.drafts.put(id,input); }
+  async saveSession(id,input) {
+    if(input.draftId !== undefined) {
+      this.project(id);
+      if(typeof input.draftId!=='string' || input.draftId.length>100 || !Number.isSafeInteger(input.draftRevision))throw new Error('草稿保存标识无效。');
+      const captureKey=input.draftId+':'+input.draftRevision;
+      const existing=this.store.query(data=>data.sessions.find(s=>s.projectId===id && s.captureKey===captureKey));
+      if(existing) {
+        const draft=await this.getDraft(id);
+        if(draft.id===input.draftId && draft.revision===input.draftRevision) {
+          return this.drafts.complete(id,input,async()=>({id:existing.id,createdAt:existing.createdAt,snapshotState:existing.snapshot.state}));
+        }
+        return {id:existing.id,createdAt:existing.createdAt,snapshotState:existing.snapshot.state,draft,draftCleared:true};
+      }
+      try { return await this.drafts.complete(id,input,()=>this.captureScene(id,{...input,captureKey})); }
+      catch(error) {
+        if(error.statusCode===409) {
+          const saved=this.store.query(data=>data.sessions.find(s=>s.projectId===id && s.captureKey===captureKey));
+          if(saved)return {id:saved.id,createdAt:saved.createdAt,snapshotState:saved.snapshot.state,draft:await this.getDraft(id),draftCleared:true};
+        }
+        throw error;
+      }
+    }
+    return this.captureScene(id,{...input,captureKey:undefined});
+  }
+  async captureScene(id, input) {
     const project = this.project(id);
     const title = field(input.title, '标题', 150, true), next = field(input.next, '下一步', 3000, true), note = field(input.note, '卡点 / 决定', 6000);
     const file = field(input.file, '文件路径', 4096).replaceAll('\\', '/');
     const line = Number(input.line || 1);
     if (!Number.isInteger(line) || line < 1 || line > 10000000) throw new Error('行号应是 1 到 10000000 之间的整数。');
     if (file) normalizeScope([file]);
+    const goal=field(input.goal,'本段目标',3000);
     const snapshot = emptySnapshot();
-    const session = { id: randomUUID(), projectId: id, title, next, note, file, line, createdAt: new Date().toISOString(), snapshot };
-    await this.store.appendSession(session);
+    const session = { id: randomUUID(), projectId: id, title, goal, next, note, file, line, createdAt: new Date().toISOString(), snapshot, ...(input.captureKey ? {captureKey:input.captureKey} : {}) };
+    const savedId=await this.store.appendSession(session);
+    if(savedId!==session.id)return {id:savedId,snapshotState:'pending'};
     // Durability is acknowledged before any Git subprocess or file hashing starts.
     let scheduled;
     scheduled = new Promise(resolve => setImmediate(resolve)).then(async () => {
@@ -133,9 +162,14 @@ export class Service {
     if (!Number.isInteger(line) || line < 1 || line > 10000000) throw new Error('行号无效。');
     return { path: await resolveProjectFile(project.path, file), line, isFile: Boolean(file) };
   }
-  exportJson() { return this.store.read(); }
-  exportMarkdown() {
-    const db = this.store.read();
+  async exportJson() {
+    const candidates=await this.drafts.list(this.store.query(data=>data.projects));
+    const data=this.store.read();
+    const drafts=candidates.filter(d=>!data.sessions.some(s=>s.projectId===d.projectId && s.captureKey===d.id+':'+d.revision));
+    return {...data,...(drafts.length?{drafts}:{})};
+  }
+  async exportMarkdown() {
+    const db = await this.exportJson();
     const lines = ['# 续上 · 工作记忆', '', `导出时间：${new Date().toISOString()}`, ''];
     for (const p of db.projects) {
       lines.push(`## ${p.name.replace(/[\r\n]/g, ' ')}`, '', `项目路径：${p.path}`, '');
@@ -143,13 +177,18 @@ export class Service {
         lines.push(`### ${s.createdAt} · ${s.title.replace(/[\r\n]/g, ' ')}`, '', `下一步：${s.next}`, '', `卡点 / 决定：${s.note || '未填写'}`, '', `位置：${s.file ? `${s.file}:${s.line}` : '项目根目录'}`, '', `分支：${s.snapshot.git?.branch || '普通文件夹'}`, '', `文件摘要：${Object.keys(s.snapshot.files).length} 个${s.snapshot.truncated ? '（扫描不完整）' : ''}`, '');
       }
     }
+    const drafts=db.drafts || [];
+    if(drafts.length)lines.push('## 未归档草稿','');
+    for(const d of drafts)lines.push('### '+db.projects.find(p=>p.id===d.projectId).name,'','当前目标：'+d.fields.goal,'','随手记：'+d.fields.note,'','下一步：'+d.fields.next,'');
     return lines.join('\n');
   }
   async importJson(input) {
     const imported = validateDatabase(input);
+    const incomingDrafts=this.drafts.validateImport(input.drafts,imported.projects);
+    const mapping = new Map();
     for (const s of imported.sessions) if(s.snapshot.state==='pending') s.snapshot={...s.snapshot,state:'interrupted',truncated:true,warnings:['备份中的文件检查未完成；笔记已恢复。']};
-    return this.store.mutate(data => {
-      const mapping = new Map();let projects = 0, sessions = 0;
+    const result = await this.store.mutate(data => {
+      let projects = 0, sessions = 0;
       for (const p of imported.projects) {
         let existing = data.projects.find(x => keyPath(x.path) === keyPath(p.path));
         if (!existing) { existing = { ...p, id: data.projects.some(x => x.id === p.id) ? randomUUID() : p.id };data.projects.push(existing);projects++; }
@@ -161,6 +200,12 @@ export class Service {
       }
       return { projects, sessions };
     });
+    if(incomingDrafts.length) {
+      let drafts=0,skippedDrafts=0;
+      for(const d of incomingDrafts)if(await this.drafts.restore(mapping.get(d.projectId),d.fields))drafts++;else skippedDrafts++;
+      return {...result,drafts,skippedDrafts};
+    }
+    return result;
   }
   async createExample() {
     const directory = path.join(this.store.directory, 'example', 'small-island');

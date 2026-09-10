@@ -35,7 +35,7 @@ try {
   const firstStart=performance.now();await app.service.saveSession(p.id,note);const firstSave=performance.now()-firstStart;
   await app.service.waitForIdle();const firstDetail=await app.service.detail(p.id);
   const firstScan=firstDetail.sessions[0].snapshot;
-  const backup=app.service.exportJson(),seed=backup.sessions[0];
+  const backup=await app.service.exportJson(),seed=backup.sessions[0];
   for(let i=1;i<100;i++)backup.sessions.push({...seed,id:randomUUID(),title:'History '+i,createdAt:new Date(Date.now()-i*60000).toISOString()});
   await app.service.importJson(backup);await app.close();
   const cold=performance.now();app=await createApp({dataDirectory:path.join(dir,'data'),port:0});const restart=performance.now()-cold;
@@ -75,4 +75,3 @@ try {
   if(!within(base,dir)||dir===base)throw new Error('Unsafe benchmark cleanup path.');
   await rm(dir,{recursive:true,force:true,maxRetries:6,retryDelay:500});
 }
-

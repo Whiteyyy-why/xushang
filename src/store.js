@@ -19,6 +19,8 @@ export function validateDatabase(value) {
   for (const s of value.sessions) {
     if (!s || !text(s.id, 100) || !s.id || sessionIds.has(s.id) || !ids.has(s.projectId) || !text(s.title, 150) || !s.title || !text(s.next, 3000) || !s.next || !text(s.note, 6000) || !text(s.createdAt, 100) || !Number.isFinite(Date.parse(s.createdAt)) || !text(s.file, 4096) || !Number.isInteger(s.line) || s.line < 1 || s.line > 10000000) throw new Error('备份中的现场记录无效。');
     if (path.isAbsolute(s.file) || s.file.split(/[\\/]/).includes('..') || s.file.includes('\0')) throw new Error('备份中的文件位置越出了项目目录。');
+    if(s.goal!==undefined && !text(s.goal,3000))throw new Error('工作目标无效。');
+    if(s.captureKey !== undefined && (typeof s.captureKey!=='string' || s.captureKey.length>150))throw new Error('保存标识无效。');
     const snap = s.snapshot;
     if (!snap || !snap.files || typeof snap.files !== 'object' || Array.isArray(snap.files) || Object.keys(snap.files).length > 5000 || typeof snap.truncated !== 'boolean') throw new Error('备份中的文件快照无效。');
     for (const [name, f] of Object.entries(snap.files)) {
@@ -36,7 +38,7 @@ export function validateDatabase(value) {
   // Rebuild the supported schema: imported extra fields are never persisted or executed.
   return { version: 1,
     projects: value.projects.map(p => ({ id: p.id, name: p.name, path: p.path, createdAt: p.createdAt, scanMode: p.scanMode || 'workset', scope: p.scope || [], includeUntracked: p.includeUntracked === true })),
-    sessions: value.sessions.map(s => ({ id: s.id, projectId: s.projectId, title: s.title, next: s.next, note: s.note, createdAt: s.createdAt, file: s.file, line: s.line,
+    sessions: value.sessions.map(s => ({ id: s.id, projectId: s.projectId, title: s.title, goal:s.goal||'', captureKey:s.captureKey, next: s.next, note: s.note, createdAt: s.createdAt, file: s.file, line: s.line,
       snapshot: { fileCount: Object.keys(s.snapshot.files).length, state: s.snapshot.state || (s.snapshot.truncated ? 'partial' : 'complete'), coverage: s.snapshot.coverage || { mode:'full', roots:[], includeUntracked:true }, absent: s.snapshot.absent || [], durationMs: s.snapshot.durationMs || 0, files: s.snapshot.files, git: s.snapshot.git || null, scannedAt: s.snapshot.scannedAt || s.createdAt, truncated: s.snapshot.truncated, skipped: Number.isSafeInteger(s.snapshot.skipped) ? s.snapshot.skipped : 0, warnings: Array.isArray(s.snapshot.warnings) ? s.snapshot.warnings.filter(x => typeof x === 'string').slice(0, 10) : [], bytes: Number.isSafeInteger(s.snapshot.bytes) ? s.snapshot.bytes : 0 }
     }))
   };
@@ -150,7 +152,11 @@ export class Store {
     this.tail = task.catch(() => {});
     return task;
   }
-  appendSession(session) { return this.enqueue(async () => { await this.writePatch([], [session]); return session.id; }); }
+  appendSession(session) { return this.enqueue(async () => {
+    const existing=session.captureKey && this.data.sessions.find(s=>s.projectId===session.projectId && s.captureKey===session.captureKey);
+    if(existing)return existing.id;
+    await this.writePatch([], [session]);return session.id;
+  }); }
   updateSnapshot(id, snapshot) {
     return this.enqueue(async () => {
       const session = this.data.sessions.find(s => s.id === id);

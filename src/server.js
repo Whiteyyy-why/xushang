@@ -10,7 +10,7 @@ import { Service } from './service.js';
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
-const staticFiles = new Set(['index.html', 'styles.css', 'app.js', 'favicon.svg', 'logo.svg', 'icons.svg']);
+const staticFiles = new Set(['index.html', 'styles.css', 'app.js', 'favicon.svg', 'logo.svg', 'icons.svg', 'work.js']);
 const MAX_BODY = 32 * 1024 * 1024;
 async function readBody(req) {
   let size = 0;const chunks = [];
@@ -55,10 +55,12 @@ export async function createApp({ dataDirectory = process.env.XUSHANG_DATA_DIR |
         if (req.method === 'GET' && url.pathname === '/api/projects') return json(res, 200, await service.list());
         if (req.method === 'GET' && url.pathname === '/api/export') {
           const markdown = url.searchParams.get('format') === 'md';
+          const content=markdown ? await service.exportMarkdown() : JSON.stringify(await service.exportJson(),null,2);
           res.writeHead(200, { 'Content-Type': markdown ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="xushang-backup.${markdown ? 'md' : 'json'}"` });
-          return res.end(markdown ? service.exportMarkdown() : JSON.stringify(service.exportJson(), null, 2));
+          return res.end(content);
         }
-        const match = url.pathname.match(/^\/api\/projects\/([^/]+)(?:\/(sessions|open|refresh|cancel|scope|history))?$/);
+        const match = url.pathname.match(/^\/api\/projects\/([^/]+)(?:\/(sessions|open|refresh|cancel|scope|history|draft))?$/);
+        if (req.method === 'GET' && match?.[2] === 'draft') return json(res,200,await service.getDraft(match[1]));
         if (req.method === 'GET' && match?.[2] === 'history') return json(res,200,await service.history(match[1],Number(url.searchParams.get('offset') || 0)));
         if (req.method === 'GET' && match && !match[2]) return json(res, 200, await service.detail(match[1]));
         if (req.method !== 'POST') return json(res, 404, { error: '没有这个接口。' });
@@ -72,6 +74,7 @@ export async function createApp({ dataDirectory = process.env.XUSHANG_DATA_DIR |
           if (choosingFolder) throw new Error('文件夹选择窗口已经打开。');
           choosingFolder = true;try { return json(res, 200, await pickDirectory()); } finally { choosingFolder = false; }
         }
+        if (match?.[2] === 'draft') return json(res,200,await service.putDraft(match[1],body));
         if (match?.[2] === 'sessions') return json(res, 201, await service.saveSession(match[1], body));
         if (match?.[2] === 'cancel') return json(res, 200, service.cancel(match[1]));
         if (match?.[2] === 'scope') return json(res, 200, await service.setScope(match[1], body));
@@ -84,7 +87,7 @@ export async function createApp({ dataDirectory = process.env.XUSHANG_DATA_DIR |
       if (!staticFiles.has(file)) return json(res, 404, { error: '页面不存在。' });
       const content = await readFile(path.join(root, 'public', file));
       res.writeHead(200, { 'Content-Type': mime[path.extname(file)] || 'application/octet-stream' });res.end(content);
-    } catch (error) { if (!res.headersSent) json(res, 400, { error: error.message || '操作未完成，请重试。' });else res.end(); }
+    } catch (error) { if (!res.headersSent) json(res, error.statusCode || 400, { error: error.message || '操作未完成，请重试。', ...(error.current ? {current:error.current} : {}) });else res.end(); }
   });
   server.requestTimeout = 150000;
   try {

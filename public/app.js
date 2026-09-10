@@ -4,10 +4,11 @@ const e = escapeHtml;
 const state = { projects: [], selected: '', detail: null, view: 'desk', dataDirectory: '', notice: '', loading: true, checking: false, checkError: '', generation: 0 };
 try { state.selected = localStorage.getItem('xushang-project') || ''; } catch {}
 let toastTimer, pollTimer;
-async function api(url, body) {
-  const response = await fetch('/api' + url, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Xushang-Client': '1', ...(body === undefined ? {} : {'Content-Type':'application/json'}) }, ...(body === undefined ? {} : {body:JSON.stringify(body)}) });
+const work=createWorkController({api,escapeHtml:e,onChange:force=>render(force),toast});
+async function api(url, body, options={}) {
+  const response = await fetch('/api' + url, { keepalive:options.keepalive===true, method: body === undefined ? 'GET' : 'POST', headers: { 'X-Xushang-Client': '1', ...(body === undefined ? {} : {'Content-Type':'application/json'}) }, ...(body === undefined ? {} : {body:JSON.stringify(body)}) });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || '操作没有完成，请重试。');
+  if (!response.ok) {const error=new Error(data.error || '操作没有完成，请重试。');error.status=response.status;error.current=data.current;throw error;}
   return data;
 }
 function toast(message, error = false) {
@@ -74,13 +75,21 @@ function comparisonPanel(d) {
 function desk() {
   if (!state.projects.length) return empty();
   const d = state.detail;
-  const head = heading('接着来，思路还在。', '打开的是现场，接上的是你自己。', (state.checking ? button('停止检查','cancel') : button('↻ 刷新变化','refresh')) + button('检查范围','scope') + button('＋ 留个现场', 'capture', 'primary', !d ? 'disabled' : ''));
+  if(d && work.active())return focusDesk(d);
+  const head = heading('接着来，思路还在。', '打开的是现场，接上的是你自己。', (state.checking ? button('停止检查','cancel') : button('↻ 刷新变化','refresh')) + button('检查范围','scope') + button('收工，留下一步', 'capture', 'primary', !d ? 'disabled' : ''));
   if (!d) return head + projectStrip() + '<div class="loading">正在读取保存的现场…</div>';
   const s = d.sessions[0];
-  const card = s ? '<article class="panel session-panel"><div class="panel-top"><span class="meta">' + e(time(s.createdAt)) + ' 留下的现场</span><span class="badge blue">下一步已就位</span></div><h2>' + e(s.title) + '</h2><p class="note-text">' + e(s.note || '这次没有留下卡点。') + '</p><div class="next-step"><label>下次，先做这个</label><p>' + e(s.next) + '</p></div><div class="session-position">' + e(s.file ? s.file + ':' + s.line : d.project.path) + '</div><p class="caption">' + e(({pending:'笔记已保存 · 文件检查正在排队',cancelled:'笔记已保存 · 文件检查已取消',failed:'笔记已保存 · 文件检查未完成',interrupted:'笔记已保存 · 上次文件检查中断'})[s.snapshot.state] || ('文件采集于 '+time(s.snapshot.scannedAt))) + '</p><div class="panel-actions">' + button('继续这个现场 ↗', 'open', 'primary', 'data-session="' + e(s.id) + '"') + '<button class="text-button" data-action="copy" data-session="' + e(s.id) + '">复制位置</button><button class="text-button" data-nav="memory">回看之前的决定 →</button></div></article>' :
-    '<article class="panel"><span class="eyebrow">THE FIRST CHAPTER</span><div class="nosnapshot"><h2>' + e(d.project.name) + '，从这一刻开始。</h2><p>写下现在做到哪里，以及下次先做什么。</p>' + button('留第一个现场 ↗', 'capture', 'primary') + '</div><p class="caption">' + e(d.project.path) + '</p></article>';
-  return head + projectStrip() + '<div class="desk-grid">' + card + comparisonPanel(d) + '</div>' +
-    (d.sessions.length > 1 ? '<section class="recent-section"><div class="section-title"><h3>之前的几步</h3><button class="text-button" data-nav="memory">查看全部 ' + d.sessions.length + ' 条 →</button></div>' + d.sessions.slice(1,4).map(s => '<div class="recent-row"><div><h3>' + e(s.title) + '</h3><p>' + e(s.next) + '</p></div><time>' + time(s.createdAt) + '</time></div>').join('') + '</section>' : '');
+  const card = s ? '<article class="panel session-panel"><div class="panel-top"><span class="meta">' + e(time(s.createdAt)) + ' 留下的现场</span><span class="badge blue">下一步已就位</span></div><h2>' + e(s.title) + '</h2>' + (s.goal ? '<p class="caption">本段目标：'+e(s.goal)+'</p>' : '') + '<p class="note-text">' + e(s.note || '这次没有留下卡点。') + '</p><div class="next-step"><label>下次，先做这个</label><p>' + e(s.next) + '</p></div><div class="session-position">' + e(s.file ? s.file + ':' + s.line : d.project.path) + '</div><p class="caption">' + e(({pending:'笔记已保存 · 文件检查正在排队',cancelled:'笔记已保存 · 文件检查已取消',failed:'笔记已保存 · 文件检查未完成',interrupted:'笔记已保存 · 上次文件检查中断'})[s.snapshot.state] || ('文件采集于 '+time(s.snapshot.scannedAt))) + '</p><div class="panel-actions">' + button('开始这一段', 'focus', 'primary', 'data-session="' + e(s.id) + '"') + '<button class="text-button" data-action="copy" data-session="' + e(s.id) + '">复制位置</button><button class="text-button" data-nav="memory">回看之前的决定 →</button></div></article>' :
+    '<article class="panel"><span class="eyebrow">THE FIRST CHAPTER</span><div class="nosnapshot"><h2>' + e(d.project.name) + '，从这一刻开始。</h2><p>写下现在做到哪里，以及下次先做什么。</p>' + button('开始专注工作', 'focus', 'primary') + button('直接留下下一步','capture','ghost') + '</div><p class="caption">' + e(d.project.path) + '</p></article>';
+  return head + projectStrip() + work.banner() + '<div class="desk-grid">' + card + comparisonPanel(d) + '</div>' +
+    (d.sessions.length > 1 ? '<section class="recent-section"><div class="section-title"><h3>之前的几步</h3><button class="text-button" data-nav="memory">查看全部 ' + (d.totalSessions||d.sessions.length) + ' 条 →</button></div>' + d.sessions.slice(1,4).map(s => '<div class="recent-row"><div><h3>' + e(s.title) + '</h3><p>' + e(s.next) + '</p></div><time>' + time(s.createdAt) + '</time></div>').join('') + '</section>' : '');
+}
+function focusHead(d) {
+  return heading(e(d.project.name),'把目标和随手记放在眼前，草稿会自动保存。',
+    (state.checking?button('停止检查','cancel'):button('刷新变化','refresh'))+button('收工，留下一步','capture','primary'),'ONE THING AT A TIME');
+}
+function focusDesk(d) {
+  return '<div id="focus-head">'+focusHead(d)+projectStrip()+'</div><div class="desk-grid focus-grid">'+work.panel()+'<aside id="focus-comparison">'+comparisonPanel(d)+'</aside></div>';
 }
 function memory() {
   const d = state.detail;
@@ -94,22 +103,30 @@ function storage() {
     '<div class="storage-columns"><section class="panel"><h3>把工作记忆带走</h3><p>Markdown 适合阅读；JSON 保留完整记录，可用于恢复。</p><div class="button-row">' + button('Markdown ↓','export-md') + button('JSON 备份 ↓','export-json') + '</div></section><section class="panel"><h3>从备份接着来</h3><p>导入续上的 JSON 备份。已有现场保留，重复记录自动跳过。</p>' + button('导入 JSON 备份','import') + '</section></div>' +
     '<div class="data-path">数据保存位置<code>' + e(state.dataDirectory) + '</code>保存的是工作上下文和文件指纹，不包含源文件正文。</div><p class="caption">打开页面先读本地记录；文件与 Git 检查在后台运行，60 秒内复用结果。检查使用 5 秒时间预算，可随时停止；保存笔记不等待检查完成。</p>';
 }
-function render() {
+function render(force=false) {
   $('#view-title').textContent = {desk:'工作台',memory:'工作记忆',storage:'接入与存储'}[state.view];
   document.querySelectorAll('.nav-item').forEach(el => { const active = el.dataset.view === state.view;el.classList.toggle('active',active);if(active)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current'); });
   $('#sidebar-projects').innerHTML = state.projects.map(p => '<button class="project-link ' + (p.id === state.selected ? 'active' : '') + '" data-project="' + e(p.id) + '"><span class="project-mark">' + e(p.name.slice(0,1)) + '</span><span>' + e(p.name) + '</span></button>').join('');
   $('#main').setAttribute('aria-busy',String(state.loading));
+  const liveFocus=$('#focus-workspace');
+  if(!force && state.view==='desk' && work.active() && liveFocus?.dataset.project===state.selected) {
+    $('#focus-head').innerHTML=focusHead(state.detail)+projectStrip();
+    $('#focus-comparison').innerHTML=comparisonPanel(state.detail);
+    work.refreshStatus();return;
+  }
   $('#main').innerHTML = (state.notice ? '<div class="warning">' + e(state.notice) + '</div>' : '') + (state.view === 'desk' ? desk() : state.view === 'memory' ? memory() : storage());
+  work.refreshStatus();
 }
 async function loadProjects() { const data = await api('/projects');state.projects=data.projects;state.dataDirectory=data.dataDirectory;state.notice=data.notice; }
 async function selectProject(id, { changeView = true } = {}) {
-  clearTimeout(pollTimer);state.selected=id;state.detail=null;state.checkError='';state.checking=false;if(changeView)state.view='desk';const generation=++state.generation;
+  clearTimeout(pollTimer);work.select(id);state.selected=id;state.detail=null;state.checkError='';state.checking=false;if(changeView)state.view='desk';const generation=++state.generation;
   try { localStorage.setItem('xushang-project',id); } catch {}
   render();
   try {
     const detail=await api('/projects/'+encodeURIComponent(id));
     if(generation!==state.generation)return;
     state.detail=detail;state.loading=false;state.checking=Boolean(detail.job);render();
+    work.load(detail.project,detail.sessions[0]);
     if(detail.job) pollBackground(id,generation); else if(detail.stale) backgroundCheck(false);
   } catch(error) { if(generation===state.generation){state.loading=false;state.checkError=error.message;$('#main').insertAdjacentHTML('beforeend','<div class="error-panel">'+e(error.message)+'</div>');} }
 }
@@ -137,17 +154,27 @@ async function backgroundCheck(force) {
   finally { if(generation===state.generation){state.checking=false;render();} }
 }
 function showAdd() { const form=$('#add-form');form.reset();form.querySelector('.form-error').hidden=true;$('#add-dialog').showModal(); }
-function showCapture() {
+function fillCapture(fields) {
+  const form=$('#session-form'),latest=state.detail?.sessions[0];
+  form.elements.title.value=fields.title || fields.goal?.slice(0,150) || latest?.title || '工作现场';
+  form.elements.note.value=fields.note || '';
+  form.elements.next.value=fields.next || '';
+  form.elements.file.value=fields.file || '';
+  form.elements.line.value=fields.line || 1;
+}
+async function showCapture() {
   if(!state.detail)return;
-  const form=$('#session-form');form.reset();form.dataset.project=state.selected;form.querySelector('.form-error').hidden=true;
-  const latest=state.detail.sessions[0];
-  if(latest){form.elements.title.value=latest.title;form.elements.file.value=latest.file;form.elements.line.value=latest.line;}
+  const fields=await work.finishFields();if(!fields)return;
+  const form=$('#session-form');form.reset();form.dataset.project=state.selected;form.querySelector('[role=alert]').hidden=true;
+  fillCapture(fields);
   $('#project-files').innerHTML=(state.detail.current?.files||[]).slice(0,500).map(f=>'<option value="'+e(f)+'"></option>').join('');
-  $('#capture-note').textContent='保存到 '+state.detail.project.name+' · 笔记先保存，文件检查在后台完成。';
-  $('#session-dialog').showModal();
+  $('#capture-note').textContent='保存到 '+state.detail.project.name+' · 笔记先落盘，文件检查随后完成。';
+  $('#capture-details').open=false;
+  $('#session-dialog').showModal();work.refreshStatus();form.elements.next.focus();
 }
 function chosenSession(id) { return state.detail?.sessions.find(s=>s.id===id) || state.detail?.sessions[0]; }
 async function download(format) {
+  await work.flushAll();
   const response=await fetch('/api/export?format='+format,{headers:{'X-Xushang-Client':'1'}});
   if(!response.ok)throw new Error('导出未完成。');
   const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=url;a.download='xushang-'+new Date().toISOString().slice(0,10)+'.'+format;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('备份已导出。');
@@ -160,7 +187,16 @@ document.addEventListener('click',async event=>{
   const action=btn.dataset.action;if(!action)return;
   try {
     if(action==='add')showAdd();
-    if(action==='capture')showCapture();
+    if(action==='capture')await showCapture();
+    if(action==='focus')await work.start();
+    if(action==='leave-focus')work.leaving();
+    if(action==='retry-draft'){await work.flush();toast('草稿已保存到本机。');}
+    if(action==='keep-draft'||action==='remote-draft'){
+      await work.resolve(action==='keep-draft');if($('#session-dialog').open)fillCapture(work.fields());
+    }
+    if(action==='focus-open'){const f=work.fields();await api('/projects/'+encodeURIComponent(state.selected)+'/open',{file:f.file,line:f.line});toast('已发送到 VS Code。');}
+    if(action==='focus-copy'){const f=work.fields();await navigator.clipboard.writeText(state.detail.project.path+(f.file?'/'+f.file+':'+f.line:''));toast('已复制工作位置。');}
+    if(action==='shortcuts')$('#shortcuts-dialog').showModal();
     if(action==='scope')showScope();
     if(action==='more-history'){
       const id=state.selected,generation=state.generation;btn.disabled=true;
@@ -183,23 +219,39 @@ $('#pick-folder').addEventListener('click',async()=>{
   catch(error){const el=$('#add-form .form-error');el.hidden=false;el.textContent=error.message;}
   finally{btn.disabled=false;btn.textContent='浏览…';}
 });
-function setFormBusy(form,busy,label){form.querySelectorAll('button').forEach(btn=>btn.disabled=busy);form.dataset.busy=String(busy);const submit=form.querySelector('[type=submit]');if(busy){submit.dataset.label=submit.innerHTML;submit.textContent=label;}else submit.innerHTML=submit.dataset.label||submit.innerHTML;}
-document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('cancel',event=>{if(dialog.querySelector('form').dataset.busy==='true')event.preventDefault();}));
+function setFormBusy(form,busy,label){form.querySelectorAll(form.id==='session-form'?'button,input,textarea,select':'button').forEach(btn=>btn.disabled=busy);form.dataset.busy=String(busy);const submit=form.querySelector('[type=submit]');if(busy){submit.dataset.label=submit.innerHTML;submit.textContent=label;}else submit.innerHTML=submit.dataset.label||submit.innerHTML;}
+document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('cancel',event=>{if(dialog.querySelector('form')?.dataset.busy==='true')event.preventDefault();}));
 $('#add-form').addEventListener('submit',async event=>{
   event.preventDefault();const form=event.currentTarget;setFormBusy(form,true,'正在接入…');form.querySelector('.form-error').hidden=true;
   try{const project=await api('/projects',Object.fromEntries(new FormData(form)));$('#add-dialog').close();await loadProjects();await selectProject(project.id);toast('项目已接入，文件检查会在后台完成。');}
   catch(error){form.querySelector('.form-error').textContent=error.message;form.querySelector('.form-error').hidden=false;}
   finally{setFormBusy(form,false);}
 });
+$('#session-form').addEventListener('input',event=>{
+  const name=event.target.name;if(['title','note','next','file','line'].includes(name))work.change({[name]:name==='line'?Number(event.target.value||1):event.target.value},event.currentTarget.dataset.project);
+});
+$('#session-dialog').addEventListener('close',()=>render());
 $('#session-form').addEventListener('submit',async event=>{
-  event.preventDefault();const form=event.currentTarget,id=form.dataset.project;setFormBusy(form,true,'正在保存现场…');form.querySelector('.form-error').hidden=true;
-  try{await api('/projects/'+encodeURIComponent(id)+'/sessions',Object.fromEntries(new FormData(form)));$('#session-dialog').close();await loadProjects();await selectProject(id);toast('笔记已保存。文件检查在后台完成，可以先收工。');}
-  catch(error){form.querySelector('.form-error').textContent=error.message;form.querySelector('.form-error').hidden=false;}
+  event.preventDefault();const form=event.currentTarget,id=form.dataset.project,input=Object.fromEntries(new FormData(form));
+  setFormBusy(form,true,'正在保存现场…');form.querySelector('[role=alert]').hidden=true;
+  try {
+    await work.finish(input,id);$('#session-dialog').close();await loadProjects();await selectProject(id);
+    toast('现场已保存。下次从这一句接上。');
+  }catch(error){form.querySelector('[role=alert]').textContent=error.message;form.querySelector('[role=alert]').hidden=false;work.refreshStatus();}
   finally{setFormBusy(form,false);}
+});
+document.addEventListener('keydown',event=>{
+  if(event.isComposing || event.getModifierState?.('AltGraph') || !(event.ctrlKey||event.metaKey))return;
+  if($('#session-dialog').open && !event.altKey && event.key==='Enter'){
+    event.preventDefault();const form=$('#session-form');if(form.dataset.busy!=='true')form.requestSubmit();return;
+  }
+  if(document.querySelector('dialog[open]') || !state.detail || !event.altKey)return;
+  if(event.key==='Enter'){event.preventDefault();state.view='desk';work.start().catch(error=>toast(error.message,true));}
+  else if(event.key.toLowerCase()==='s'){event.preventDefault();showCapture().catch(error=>toast(error.message,true));}
 });
 $('#import-file').addEventListener('change',async event=>{
   const file=event.target.files[0];if(!file)return;
-  try{if(file.size>32*1024*1024)throw new Error('备份不能超过 32 MB。');const result=await api('/import',JSON.parse(await file.text()));await loadProjects();state.loading=false;render();toast('已导入 '+result.projects+' 个项目、'+result.sessions+' 条现场。');if(!state.selected&&state.projects.length)await selectProject(state.projects[0].id);}
+  try{if(file.size>32*1024*1024)throw new Error('备份不能超过 32 MB。');const result=await api('/import',JSON.parse(await file.text()));await loadProjects();state.loading=false;render();toast('已导入 '+result.projects+' 个项目、'+result.sessions+' 条现场。'+(result.drafts!==undefined?'恢复 '+result.drafts+' 份草稿，保留本机 '+result.skippedDrafts+' 份草稿。':''));if(state.selected)await selectProject(state.selected,{changeView:false});else if(state.projects.length)await selectProject(state.projects[0].id);}
   catch(error){toast(error instanceof SyntaxError?'文件不是有效的 JSON 备份。':error.message,true);}
   finally{event.target.value='';}
 });
@@ -213,7 +265,7 @@ init();
 $('#scope-form').addEventListener('submit',async event=>{
   event.preventDefault();const form=event.currentTarget;setFormBusy(form,true,'保存中…');
   try {
-    const input={scanMode:form.elements.scanMode.value,scope:form.elements.scope.value.split(/\\r?\\n/).map(s=>s.trim()).filter(Boolean),includeUntracked:form.elements.includeUntracked.checked};
+    const input={scanMode:form.elements.scanMode.value,scope:form.elements.scope.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),includeUntracked:form.elements.includeUntracked.checked};
     await api('/projects/'+encodeURIComponent(form.dataset.project)+'/scope',input);
     $('#scope-dialog').close();await selectProject(form.dataset.project);toast('检查范围已保存。');
   }catch(error){const el=form.querySelector('.form-error');el.textContent=error.message;el.hidden=false;}

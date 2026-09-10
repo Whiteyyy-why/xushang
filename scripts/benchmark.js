@@ -18,7 +18,7 @@ try {
   const scanStart=performance.now();await app.service.saveSession(p.id,{title:'Benchmark',next:'Continue',note:'',file:'',line:1});
   await app.service.waitForIdle();
   const initialScanMs=performance.now()-scanStart;
-  const backup=app.service.exportJson();const seed=backup.sessions[0];
+  const backup=await app.service.exportJson();const seed=backup.sessions[0];
   for(let i=1;i<100;i++)backup.sessions.push({...seed,id:randomUUID(),title:'History '+i,createdAt:new Date(Date.now()-i*60000).toISOString()});
   await app.service.importJson(backup);
   await app.close();const boot=performance.now();app=await createApp({dataDirectory:path.join(dir,'data'),port:0});
@@ -34,4 +34,3 @@ try {
   const result={fixture:{files:1000,history:100,kind:'local Git repository without a remote'},initialSaveIncludingScanMs:Math.round(initialScanMs),serverRestartMs:Math.round(serverRestartMs),openingApiMedianMs:Math.round(samples[10]),openingApiP95Ms:Math.round(samples[18]),detailResponseKB:Math.round(bytes/1024),note:'Local synthetic fixture; measurements are not a guarantee for every device or repository.'};
   console.log(JSON.stringify(result,null,2));await writeFile('docs/performance.json',JSON.stringify(result,null,2));
 }finally{if(app)await app.close();if(within(base,dir)&&dir!==base)await rm(dir,{recursive:true,force:true});}
-
