@@ -14,7 +14,9 @@ try {
   await exec('git',['-C',folder,'init','-b','main'],{windowsHide:true});
   app=await createApp({dataDirectory:path.join(dir,'data'),port:0});
   const p=await app.service.addProject({path:folder,name:'1000 files'});
+  await app.service.setScope(p.id,{scanMode:'full',scope:[],includeUntracked:true});
   const scanStart=performance.now();await app.service.saveSession(p.id,{title:'Benchmark',next:'Continue',note:'',file:'',line:1});
+  await app.service.waitForIdle();
   const initialScanMs=performance.now()-scanStart;
   const backup=app.service.exportJson();const seed=backup.sessions[0];
   for(let i=1;i<100;i++)backup.sessions.push({...seed,id:randomUUID(),title:'History '+i,createdAt:new Date(Date.now()-i*60000).toISOString()});

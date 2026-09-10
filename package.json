@@ -1,6 +1,6 @@
 {
   "name": "xushang",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "续上 — 留下工作现场，接着往前",
@@ -9,6 +9,7 @@
     "start": "node src/server.js --open",
     "dev": "node --watch src/server.js",
     "test": "node --test --test-concurrency=1",
-    "check": "node scripts/check.js"
+    "check": "node scripts/check.js",
+    "benchmark": "node scripts/benchmark-large.js"
   }
 }

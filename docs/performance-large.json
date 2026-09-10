@@ -1,0 +1,25 @@
+{
+  "fixture": {
+    "trackedFiles": 100000,
+    "untrackedFiles": 20000,
+    "historyBeforeMeasurement": 100,
+    "realGitIndex": true,
+    "indexConstruction": "Git update-index --index-info; cold stat cache; real files present"
+  },
+  "firstDurableNoteSaveMs": 1,
+  "firstBackgroundScanMs": 5611,
+  "firstBackgroundState": "partial",
+  "capturedFileCount": 1,
+  "scopedBackgroundState": "complete",
+  "scopedBackgroundMs": 1567,
+  "serverRestartMs": 7,
+  "openingApiMedianMs": 31,
+  "openingApiP95Ms": 32,
+  "durableSaveMedianMs": 7,
+  "durableSaveMaxMs": 16,
+  "maxBytesAppendedBeforeSaveResponse": 598,
+  "detailResponseKB": 66,
+  "branchChangeDetected": true,
+  "scope": "Initial scan: changed tracked files + focus. Save measurements: explicit src/m0/file-0.txt scope. Untracked enumeration disabled.",
+  "note": "Synthetic local benchmark, not full-repository content scanning or a guarantee on other hardware."
+}

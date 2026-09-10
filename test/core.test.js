@@ -18,7 +18,7 @@ async function fixture(t) {
 }
 async function setup(t, options={}) {
   const f=await fixture(t);const store=await new Store(path.join(f.dir,'data')).init();t.after(()=>store.close());
-  const service=new Service(store,options);const project=await service.addProject({path:f.project,name:'测试项目'});return {...f,store,service,project};
+  const service=new Service(store,options);t.after(()=>service.close());const project=await service.addProject({path:f.project,name:'测试项目'});return {...f,store,service,project};
 }
 const note={title:'整理初始化',next:'先读取 token，再恢复会话。',note:'刷新后会丢失状态。',file:'',line:1};
 
@@ -73,6 +73,7 @@ test('路径边界：拒绝项目外路径与目录链接',async t=>{
 test('保存现场、重启恢复与 JSON/Markdown 往返',async t=>{
   const f=await setup(t);await writeFile(path.join(f.project.path,'hello.txt'),'hello');
   await f.service.saveSession(f.project.id,{...note,file:'hello.txt',line:2});
+  await f.service.waitForIdle();
   const exported=f.service.exportJson();assert.equal(exported.sessions.length,1);
   assert(f.service.exportMarkdown().includes('先读取 token'));
   await f.store.close();const reopened=await new Store(f.store.directory).init();t.after(()=>reopened.close());
@@ -87,6 +88,7 @@ test('保存现场、重启恢复与 JSON/Markdown 往返',async t=>{
 test('无效备份与并发保存不会丢失或覆盖现有记录',async t=>{
   const f=await setup(t);await writeFile(path.join(f.project.path,'a.txt'),'hello');
   await Promise.all(Array.from({length:5},(_,i)=>f.service.saveSession(f.project.id,{...note,title:'现场 '+i})));
+  await f.service.waitForIdle();
   assert.equal(f.store.read().sessions.length,5);
   const invalid=f.service.exportJson();invalid.sessions[0].file='../escape';
   await assert.rejects(f.service.importJson(invalid),/越出/);assert.equal(f.store.read().sessions.length,5);
@@ -96,10 +98,10 @@ test('无效备份与并发保存不会丢失或覆盖现有记录',async t=>{
 test('数据目录单实例锁与损坏文件备份恢复',async t=>{
   const f=await setup(t);await f.service.saveSession(f.project.id,note);
   await assert.rejects(new Store(f.store.directory).init(),/已经在运行/);
-  await f.store.close();await writeFile(path.join(f.store.directory,'data.json'),'broken');
+  await f.service.waitForIdle();await f.store.close();await writeFile(f.store.file,'broken');
   const recovered=await new Store(f.store.directory).init();t.after(()=>recovered.close());
   assert(recovered.notice.includes('备份'));assert.equal(recovered.read().projects.length,1);
-  assert.equal(await readFile(path.join(f.store.directory,'data.json'),'utf8'),'broken');
+  assert.equal(await readFile(f.store.file,'utf8'),'broken');
 });
 
 test('速度验收：读取现场不等待缓慢扫描，60秒内复用结果',async t=>{
@@ -117,7 +119,7 @@ test('速度验收：读取现场不等待缓慢扫描，60秒内复用结果',a
 
 test('项目文件夹失联时仍能立即查看已保存现场',async t=>{
   const f=await setup(t);await f.service.saveSession(f.project.id,note);
-  await rename(f.project.path,path.join(f.dir,'moved'));
+  await f.service.waitForIdle();await rename(f.project.path,path.join(f.dir,'moved'));
   const d=await f.service.detail(f.project.id);assert.equal(d.sessions[0].next,note.next);
   await assert.rejects(f.service.refresh(f.project.id,{force:true}),/移动/);
 });
@@ -137,9 +139,10 @@ test('HTTP 完整流程、重启、同源校验与编辑器参数',async t=>{
   const {data:p}=await request('/api/projects',{path:f.project,name:'真实目录'});
   assert.equal((await request('/api/projects/'+p.id+'/sessions',{...note,file:'file with spaces.txt',line:3})).status,201);
   assert.equal((await request('/api/projects/'+p.id+'/open',{file:'file with spaces.txt',line:3})).status,200);
+  const history=await request('/api/projects/'+p.id+'/history?offset=1');assert.equal(history.status,200);assert.equal(history.data.sessions.length,0);assert.equal(history.data.totalSessions,1);
   assert.equal(target.path,path.join(f.project,'file with spaces.txt'));assert.equal(target.line,3);
   assert.equal((await request('/api/projects/'+p.id+'/open',{file:'../escape'})).status,400);
-  await writeFile(path.join(f.project,'file with spaces.txt'),'changed');
+  await app.service.waitForIdle();await writeFile(path.join(f.project,'file with spaces.txt'),'changed');
   const refreshed=await request('/api/projects/'+p.id+'/refresh',{force:true});assert.equal(refreshed.data.comparison.changes[0].kind,'modified');
   const backup=await request('/api/export');assert.equal(backup.data.sessions.length,1);
   await app.close();app=await createApp({dataDirectory:path.join(f.dir,'http-data'),port:0});

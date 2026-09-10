@@ -58,7 +58,8 @@ export async function createApp({ dataDirectory = process.env.XUSHANG_DATA_DIR |
           res.writeHead(200, { 'Content-Type': markdown ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="xushang-backup.${markdown ? 'md' : 'json'}"` });
           return res.end(markdown ? service.exportMarkdown() : JSON.stringify(service.exportJson(), null, 2));
         }
-        const match = url.pathname.match(/^\/api\/projects\/([^/]+)(?:\/(sessions|open|refresh))?$/);
+        const match = url.pathname.match(/^\/api\/projects\/([^/]+)(?:\/(sessions|open|refresh|cancel|scope|history))?$/);
+        if (req.method === 'GET' && match?.[2] === 'history') return json(res,200,await service.history(match[1],Number(url.searchParams.get('offset') || 0)));
         if (req.method === 'GET' && match && !match[2]) return json(res, 200, await service.detail(match[1]));
         if (req.method !== 'POST') return json(res, 404, { error: '没有这个接口。' });
         if (!req.headers['content-type']?.startsWith('application/json')) return json(res, 415, { error: '需要 JSON 请求。' });
@@ -72,6 +73,8 @@ export async function createApp({ dataDirectory = process.env.XUSHANG_DATA_DIR |
           choosingFolder = true;try { return json(res, 200, await pickDirectory()); } finally { choosingFolder = false; }
         }
         if (match?.[2] === 'sessions') return json(res, 201, await service.saveSession(match[1], body));
+        if (match?.[2] === 'cancel') return json(res, 200, service.cancel(match[1]));
+        if (match?.[2] === 'scope') return json(res, 200, await service.setScope(match[1], body));
         if (match?.[2] === 'refresh') return json(res, 200, await service.refresh(match[1], body));
         if (match?.[2] === 'open') { const target = await service.fileTarget(match[1], body); await openExternal(target);return json(res, 200, { opened: true, path: target.path }); }
         return json(res, 404, { error: '没有这个接口。' });
@@ -88,7 +91,7 @@ export async function createApp({ dataDirectory = process.env.XUSHANG_DATA_DIR |
     await new Promise((resolve, reject) => { server.once('error', reject);server.listen(port, '127.0.0.1', resolve); });
   } catch (error) { await store.close();throw error; }
   origin = `http://127.0.0.1:${server.address().port}`;
-  return { server, store, service, origin, close: async () => { server.closeIdleConnections();await new Promise(resolve => server.close(resolve));await store.close(); } };
+  return { server, store, service, origin, close: async () => { const stopped = new Promise(resolve => server.close(resolve));server.closeIdleConnections();await service.close();await stopped;await service.waitForIdle();await store.close(); } };
 }
 async function openBrowser(url) {
   if (process.platform === 'win32') {

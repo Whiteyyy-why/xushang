@@ -18,3 +18,6 @@ img.brand-mark{display:block;background:transparent;object-fit:contain;box-shado
 .nav-item>.ui-icon{width:19px;height:19px;color:#7c8ca4}.nav-item.active>.ui-icon{color:var(--blue)}
 .icon-button>.ui-icon{width:20px;height:20px}.empty-symbol>.ui-icon{width:32px;height:32px;stroke-width:1.65}
 .checkmark>.ui-icon{width:21px;height:21px}.branch>.ui-icon{width:14px;height:14px;margin-right:3px}
+
+select{font:inherit;display:block;width:100%;border:1px solid #d9e3f1;background:#fbfcff;border-radius:8px;padding:10px 12px;color:var(--ink);margin-top:7px}
+.checkbox-label{display:flex;align-items:center;gap:10px}.checkbox-label input{width:18px;height:18px;margin:0}
